@@ -1,11 +1,11 @@
 import json
+import pickle
 import requests
 from keras.models import Sequential
 from keras.layers import Activation, Dense, Dropout, LSTM
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from sklearn.metrics import mean_absolute_error
 
 endpoint = 'https://min-api.cryptocompare.com/data/histoday'
@@ -111,3 +111,6 @@ print(mean_absolute_error(preds, y_test))
 preds = test[target_col].values[:-window_len] * (preds + 1)
 preds = pd.Series(index=targets.index, data=preds)
 line_plot(targets, preds, 'actual', 'prediction', lw=3)
+
+filename = 'finalized_model.sav'
+pickle.dump(model, open(filename, 'wb'))
