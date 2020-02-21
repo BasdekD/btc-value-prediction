@@ -1,116 +1,138 @@
+# Library Imports
 import json
-import pickle
-import requests
-from keras.models import Sequential
-from keras.layers import Activation, Dense, Dropout, LSTM
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.metrics import mean_absolute_error
+import requests
+from sklearn.preprocessing import MinMaxScaler
+plt.style.use("ggplot")
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
+import utilities
+
+# Loading/Reading in the Data
+# df = pd.read_csv("BTC-USD.csv")
 
 endpoint = 'https://min-api.cryptocompare.com/data/histoday'
 res = requests.get(endpoint + '?fsym=BTC&tsym=EUR&limit=500')
-hist = pd.DataFrame(json.loads(res.content)['Data'])
-hist = hist.set_index('time')
-hist.index = pd.to_datetime(hist.index, unit='s')
-target_col = 'close'
+df = pd.DataFrame(json.loads(res.content)['Data'])
 
-print(hist.tail(5))
+# Data Preprocessing
+# Setting the datetime index as the date, only selecting the 'Close' column, then only the last 500 closing prices.
+df = df.set_index("time").tail(500)
+df = df.set_index(pd.to_datetime(df.index, unit='s'))
+
+# Normalizing/Scaling the Data
+scaler = MinMaxScaler()
+df = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, index=df.index)
+
+# Plotting the Closing Prices
+df['close'].plot(figsize=(14, 8))
+plt.title("BTC Closing Prices")
+plt.ylabel("Price (Normalized)")
+plt.show()
+
+# How many periods looking back to learn
+n_per_in = 30
+
+# How many periods to predict
+n_per_out = 10
+
+# Features (in this case it's 1 because there is only one feature: price)
+n_features = 6
+
+# Splitting the data into appropriate sequences
+X, y = utilities.split_sequence(df, n_per_in, n_per_out, n_features)
+print(X)
+print(y)
+
+X = np.array(X)
+# Reshaping the X variable from 2D to 3D
+X = X.reshape((X.shape[0], 30, n_features))
+y = np.array(y)
+
+# Instatiating the model
+model = Sequential()
+
+# Activation
+activ = "softsign"
+
+# Input layer
+model.add(LSTM(30, activation=activ, return_sequences=True, input_shape=(n_per_in, n_features)))
+
+# Hidden layers
+utilities.layer_maker(model, n_layers=6, n_nodes=12, activation=activ)
+
+# Final Hidden layer
+model.add(LSTM(60, activation=activ))
+
+# Output layer
+model.add(Dense(60))
+
+# Model summary
+model.summary()
+
+# Compiling the data with selected specifications
+model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+
+res = model.fit(X, y, epochs=130, batch_size=32, validation_split=0.1)
+
+utilities.visualize_training_results(res)
+
+plt.figure(figsize=(12, 5))
+
+# Getting predictions by predicting from the last available X variable
+yhat = model.predict(X[-1].reshape(1, n_per_in, n_features)).tolist()[0]
+
+# Transforming values back to their normal prices
+yhat = scaler.inverse_transform(np.array(yhat).reshape(-1, 6)).tolist()
+yhat = pd.DataFrame(yhat)
 
 
-def train_test_split(df, test_size=0.2):
-    split_row = len(df) - int(test_size * len(df))
-    train_data = df.iloc[:split_row]
-    test_data = df.iloc[split_row:]
-    return train_data, test_data
+# Getting the actual values from the last available y variable which correspond to its respective X variable
+actual = scaler.inverse_transform(y[-1].reshape(-1, 6))
+actual = pd.DataFrame(actual)
+
+# Printing and plotting those predictions
+print("Predicted Prices:\n", yhat.loc[::, 0])
+plt.plot(yhat.loc[::, 0], label='Predicted')
+
+# Printing and plotting the actual values
+print("\nActual Prices:\n", actual.loc[::, 0])
+plt.plot(actual.loc[::, 0], label='Actual')
+
+plt.title(f"Predicted vs Actual Closing Prices")
+plt.ylabel("Price")
+plt.legend()
+plt.show()
+
+# Predicting off of y because it contains the most recent dates
+yhat = model.predict(np.array(df.tail(n_per_in)).reshape(1, n_per_in, n_features)).tolist()[0]
+
+# Transforming the predicted values back to their original prices
+yhat = scaler.inverse_transform(np.array(yhat).reshape(-1, 6)).tolist()
+
+# Creating a DF of the predicted prices
+preds = pd.DataFrame(yhat, index=pd.date_range(start=df.index[-1], periods=len(yhat), freq="D"), columns=df.columns)
+
+# Printing the predicted prices
+print(preds)
+
+# Number of periods back to visualize the actual values
+pers = 10
+
+# Transforming the actual values to their original price
+actual = pd.DataFrame(scaler.inverse_transform(df.tail(pers)), index=df.tail(pers).index, columns=df.columns).append(preds.head(1))
+
+# Plotting
+plt.figure(figsize=(16, 6))
+plt.plot(actual['close'], label="Actual Prices")
+plt.plot(preds['close'], label="Predicted Prices")
+plt.ylabel("Price")
+plt.xlabel("Dates")
+plt.title(f"Forecasting the next {len(yhat)} days")
+plt.legend()
+# plt.savefig("BTC_predictions.png")
+plt.show()
 
 
-train, test = train_test_split(hist, test_size=0.2)
-
-
-def line_plot(line1, line2, label1=None, label2=None, title='', lw=2):
-    fig, ax = plt.subplots(1, figsize=(13, 7))
-    ax.plot(line1, label=label1, linewidth=lw)
-    ax.plot(line2, label=label2, linewidth=lw)
-    ax.set_ylabel('price [EUR]', fontsize=14)
-    ax.set_title(title, fontsize=16)
-    ax.legend(loc='best', fontsize=16)
-    plt.show()
-
-
-line_plot(train[target_col], test[target_col], 'training', 'test', title='')
-
-
-def normalise_zero_base(df):
-    return df / df.iloc[0] - 1
-
-
-def normalise_min_max(df):
-    return (df - df.min()) / (df.max() - df.min())
-
-
-def extract_window_data(df, window_len=5, zero_base=True):
-    window_data = []
-    for idx in range(len(df) - window_len):
-        tmp = df[idx: (idx + window_len)].copy()
-        if zero_base:
-            tmp = normalise_zero_base(tmp)
-        window_data.append(tmp.values)
-    return np.array(window_data)
-
-
-def prepare_data(df, target_col, window_len=10, zero_base=True, test_size=0.2):
-    train_data, test_data = train_test_split(df, test_size=test_size)
-    X_train = extract_window_data(train_data, window_len, zero_base)
-    X_test = extract_window_data(test_data, window_len, zero_base)
-    y_train = train_data[target_col][window_len:].values
-    y_test = test_data[target_col][window_len:].values
-    if zero_base:
-        y_train = y_train / train_data[target_col][:-window_len].values - 1
-        y_test = y_test / test_data[target_col][:-window_len].values - 1
-
-    return train_data, test_data, X_train, X_test, y_train, y_test
-
-
-def build_lstm_model(input_data, output_size, neurons=100, activ_func='linear',
-                     dropout=0.2, loss='mse', optimizer='adam'):
-    model = Sequential()
-    model.add(LSTM(neurons, input_shape=(input_data.shape[1], input_data.shape[2])))
-    model.add(Dropout(dropout))
-    model.add(Dense(units=output_size))
-    model.add(Activation(activ_func))
-
-    model.compile(loss=loss, optimizer=optimizer)
-    return model
-
-
-np.random.seed(42)
-window_len = 5
-test_size = 0.2
-zero_base = True
-lstm_neurons = 100
-epochs = 20
-batch_size = 32
-loss = 'mse'
-dropout = 0.2
-optimizer = 'adam'
-
-train, test, X_train, X_test, y_train, y_test = prepare_data(
-    hist, target_col, window_len=window_len, zero_base=zero_base, test_size=test_size)
-
-model = build_lstm_model(
-    X_train, output_size=1, neurons=lstm_neurons, dropout=dropout, loss=loss,
-    optimizer=optimizer)
-history = model.fit(
-    X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1, shuffle=True)
-
-targets = test[target_col][window_len:]
-preds = model.predict(X_test).squeeze()
-print(mean_absolute_error(preds, y_test))
-
-preds = test[target_col].values[:-window_len] * (preds + 1)
-preds = pd.Series(index=targets.index, data=preds)
-line_plot(targets, preds, 'actual', 'prediction', lw=3)
-
-filename = 'finalized_model.sav'
-pickle.dump(model, open(filename, 'wb'))
