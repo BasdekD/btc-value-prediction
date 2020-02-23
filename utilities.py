@@ -85,7 +85,7 @@ def visualize_training_results(results):
     plt.show()
 
 
-def layer_maker(model, n_layers, n_nodes, activation, drop=None, d_rate=.5):
+def layer_maker(model, n_layers, n_nodes, activation, drop=None, d_rate=.2):
     """
     Creates a specified number of hidden layers for an RNN
     Optional: Adds regularization option - the dropout layer to prevent potential overfitting (if necessary)
