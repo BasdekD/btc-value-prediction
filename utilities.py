@@ -1,6 +1,12 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 from keras.layers import LSTM, Dense, Dropout
+import yfinance as yf
+
+
+def createDataset():
+    btc = yf.download(tickers='BTC-EUR')
+    return btc
 
 
 def split_sequence(data, n_in=1, n_out=1, n_features=1, dropnan=True):

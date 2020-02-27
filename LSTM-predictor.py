@@ -1,40 +1,24 @@
 # Library Imports
-import json
-import os
 import pickle
-
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import requests
-from keras.backend import flatten
-from sklearn.metrics import mean_absolute_error
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
-
 import conf
-
-plt.style.use("ggplot")
+import utilities
+from sklearn.metrics import mean_absolute_error
+from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout, Activation, RepeatVector, TimeDistributed
-import utilities
 
-# endpoint = 'https://min-api.cryptocompare.com/data/histoday'      # TODO: UNCOMMENT FOR LIVE DATA
-# res = requests.get(endpoint + '?fsym=BTC&tsym=EUR&limit=500')
-# df = pd.DataFrame(json.loads(res.content)['Data'])
+plt.style.use("ggplot")
 
-df = pd.read_csv(conf.CURR_DIR + '\\BTC-EUR.csv')
 
-# Data Preprocessing        # TODO: UNCOMMENT FOR LIVE DATA PROCESSING
-# Setting the datetime index as the date, only selecting the 'Close' column, then only the last 500 closing prices.
-# df = df.set_index("time")
-# df = df.set_index(pd.to_datetime(df.index, unit='s'))
+df = utilities.createDataset()
 
-df = df.set_index("Date")       # TODO: CHANGE DATE TO "time" FOR LIVE DATA
 df = df.set_index(pd.to_datetime(df.index))
+print(df.index[-1])
 
 # Normalizing/Scaling the Data
-# scaler = StandardScaler()
-# scaler = RobustScaler()
 scaler = MinMaxScaler()
 df = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, index=df.index)
 
@@ -78,7 +62,7 @@ if not conf.TRAINED_MODEL.exists():
 
     model.add(RepeatVector(n_per_out))
     # Hidden layers
-    utilities.layer_maker(model, n_layers=6, n_nodes=12, activation=activ)
+    utilities.layer_maker(model, n_layers=8, n_nodes=12, activation=activ)  # TODO: Try 20 units for the hidden layers!
 
     # Final Hidden layer
     model.add(LSTM(10, activation=activ, return_sequences=True))
@@ -92,7 +76,7 @@ if not conf.TRAINED_MODEL.exists():
 
     model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
 
-    res = model.fit(X, y, batch_size=32, epochs=800, validation_split=0.1)
+    res = model.fit(X, y, batch_size=32, epochs=2, validation_split=0.1)
 
     utilities.visualize_training_results(res)
 
@@ -119,11 +103,13 @@ print(mean_absolute_error(yhat, actual))
 
 # Printing and plotting those predictions
 print("Predicted Prices:\n", yhat.loc[::, 3])
+
 plt.plot(yhat.loc[::, 3], label='Predicted')    # TODO: Change from 3 to 0
 
 # Printing and plotting the actual values
 print("\nActual Prices:\n", actual.loc[::, 3])
 plt.plot(actual.loc[::, 3], label='Actual')     # TODO: Change from 3 to 0
+
 
 plt.title(f"Predicted vs Actual Closing Prices")
 plt.ylabel("Price")
@@ -150,7 +136,7 @@ pers = 10
 actual = pd.DataFrame(scaler.inverse_transform(df.tail(pers)), index=df.tail(pers).index, columns=df.columns).append(preds.head(1))
 
 # Plotting
-plt.figure(figsize=(20, 10))
+plt.figure(figsize=(16, 6))
 
 plt.plot(actual['Close'], label="Actual Prices")        # TODO: TOGGLE {Close, close}
 plt.plot(preds['Close'], label="Predicted Prices")
