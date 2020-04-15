@@ -6,14 +6,14 @@ import pandas as pd
 import conf
 import utilities
 from sklearn.metrics import mean_absolute_error
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout, Activation, RepeatVector, TimeDistributed
 
 plt.style.use("ggplot")
 
 
-df = utilities.createDataset()
+df, n_currencies = utilities.createDataset()
 
 df = df.set_index(pd.to_datetime(df.index))
 print(df.index[-1])
@@ -23,7 +23,7 @@ scaler = MinMaxScaler()
 df = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, index=df.index)
 
 # Plotting the Closing Prices
-df['Close'].plot(figsize=(14, 8))       # TODO: TOGGLE {Close, close}
+df['Close'].plot(figsize=(14, 8))
 plt.title("BTC Closing Prices")
 plt.ylabel("Price (Normalized)")
 plt.show()
@@ -35,7 +35,7 @@ n_per_in = 30
 n_per_out = 10
 
 # Features (in this case it's 1 because there is only one feature: price)
-n_features = 6
+n_features = 1 * n_currencies
 
 # Splitting the data into appropriate sequences
 X, y = utilities.split_sequence(df, n_per_in, n_per_out, n_features)
@@ -43,40 +43,35 @@ print(X)
 print(y)
 
 X = np.array(X)
-# Reshaping the X variable from 2D to 3D
 X = X.reshape((X.shape[0], n_per_in, n_features))
 y = np.array(y)
-y = y.reshape((y.shape[0], n_per_out, n_features))
 model = None
 
 if not conf.TRAINED_MODEL.exists():
 
-    # Instatiating the model
+    # Instantiating the model
     model = Sequential()
 
     # Activation
     activ = "softsign"
 
-    # Input layer
-    model.add(LSTM(30, activation=activ, return_sequences=False, input_shape=(n_per_in, n_features)))
+    model.add(LSTM(200, activation=activ, return_sequences=True, input_shape=(n_per_in, n_features)))
 
-    model.add(RepeatVector(n_per_out))
     # Hidden layers
-    utilities.layer_maker(model, n_layers=8, n_nodes=12, activation=activ)  # TODO: Try 20 units for the hidden layers!
+    utilities.layer_maker(model, n_layers=2, n_nodes=90, activation=activ)
 
     # Final Hidden layer
-    model.add(LSTM(10, activation=activ, return_sequences=True))
+    model.add(LSTM(200, activation=activ))
 
     # Output layer
-    # model.add(Dense(n_per_out))
-    model.add(TimeDistributed(Dense(n_features)))
+    model.add(Dense(n_per_out))
 
     # Model summary
     model.summary()
 
     model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
 
-    res = model.fit(X, y, batch_size=32, epochs=2, validation_split=0.1)
+    res = model.fit(X, y, epochs=200, batch_size=32, validation_split=0.1)
 
     utilities.visualize_training_results(res)
 
@@ -102,13 +97,14 @@ actual = pd.DataFrame(actual)
 print(mean_absolute_error(yhat, actual))
 
 # Printing and plotting those predictions
-print("Predicted Prices:\n", yhat.loc[::, 3])
+print("Predicted Prices:\n", yhat.loc[::, ::])
 
-plt.plot(yhat.loc[::, 3], label='Predicted')    # TODO: Change from 3 to 0
+
+plt.plot(yhat.loc[::, ::], label='Predicted')    # TODO: Change from 3 to 0
 
 # Printing and plotting the actual values
-print("\nActual Prices:\n", actual.loc[::, 3])
-plt.plot(actual.loc[::, 3], label='Actual')     # TODO: Change from 3 to 0
+print("\nActual Prices:\n", actual.loc[::, ::])
+plt.plot(actual.loc[::, ::], label='Actual')     # TODO: Change from 3 to 0
 
 
 plt.title(f"Predicted vs Actual Closing Prices")

@@ -5,8 +5,13 @@ import yfinance as yf
 
 
 def createDataset():
-    btc = yf.download(tickers='BTC-EUR')
-    return btc
+    btc_eur = yf.download(tickers='BTC-EUR')
+    n_currencies = 1
+
+    dataset = btc_eur['Close']
+    dataset = pd.DataFrame(dataset)
+
+    return dataset, n_currencies
 
 
 def split_sequence(data, n_in=1, n_out=1, n_features=1, dropnan=True):
@@ -16,6 +21,7 @@ def split_sequence(data, n_in=1, n_out=1, n_features=1, dropnan=True):
         data: Sequence of observations as a list or NumPy array.
         n_in: Number of lag observations as input (X).
         n_out: Number of observations as output (y).
+        n_features: Number of features to base the transaction on.
         dropnan: Boolean whether or not to drop rows with NaN values.
     Returns:
         Pandas DataFrame of series framed for supervised learning.
@@ -44,27 +50,6 @@ def split_sequence(data, n_in=1, n_out=1, n_features=1, dropnan=True):
     X = agg.iloc[::, :(n_in * n_features)]
     y = agg.iloc[::, (n_in * n_features):]
     return X, y
-
-
-# def split_sequence(seq, n_steps_in, n_steps_out):
-#     """
-#     Splits the univariate time sequence
-#     """
-#     X, y = [], []
-#
-#     for i in range(len(seq)):
-#         end = i + n_steps_in
-#         out_end = end + n_steps_out
-#
-#         if out_end > len(seq):
-#             break
-#
-#         seq_x, seq_y = seq[i:end], seq[end:out_end]
-#
-#         X.append(seq_x)
-#         y.append(seq_y)
-#
-#     return np.array(X), np.array(y)
 
 
 def visualize_training_results(results):
